@@ -5,6 +5,9 @@ import numpy as np
 import os
 import sys
 
+# Numpy compatibility fix
+np.core = np
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "notebooks"))
 from Feature_Extraction import FeatureExtraction  
 
@@ -31,6 +34,6 @@ def predict_url():
     print("Prediction Result:", result)
     return jsonify({"prediction": result})
 
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
