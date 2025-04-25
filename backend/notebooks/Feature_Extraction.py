@@ -23,7 +23,7 @@ class FeatureExtraction:
         self.soup = ""
 
         try:
-            self.response = requests.get(url)
+            self.response = requests.get(url, timeout=5)
             self.soup = BeautifulSoup(self.response.text, 'html.parser')
         except:
             pass
@@ -84,26 +84,29 @@ class FeatureExtraction:
     def longUrl(self):
         if len(self.url) < 54:
             return 1
-        if len(self.url) >= 54 and len(self.url) <= 75:
+        if 54 <= len(self.url) <= 75:
             return 0
         return -1
 
     # 3.shortUrl
     def shortUrl(self):
-        match = re.search(r'bit\.ly|goo\.gl|shorte\.st|go2l\.ink|x\.co|ow\.ly|t\.co|tinyurl|tr\.im|is\.gd|cli\.gs|'
-                          r'yfrog\.com|migre\.me|ff\.im|tiny\.cc|url4\.eu|twit\.ac|su\.pr|twurl\.nl|snipurl\.com|'
-                          r'short\.to|BudURL\.com|ping\.fm|post\.ly|Just\.as|bkite\.com|snipr\.com|fic\.kr|loopt\.us|'
-                          r'doiop\.com|short\.ie|kl\.am|wp\.me|rubyurl\.com|om\.ly|to\.ly|bit\.do|t\.co|lnkd\.in|'
-                          r'db\.tt|qr\.ae|adf\.ly|goo\.gl|bitly\.com|cur\.lv|tinyurl\.com|ow\.ly|bit\.ly|ity\.im|'
-                          r'q\.gs|is\.gd|po\.st|bc\.vc|twitthis\.com|u\.to|j\.mp|buzurl\.com|cutt\.us|u\.bb|yourls\.org|'
-                          r'x\.co|prettylinkpro\.com|scrnch\.me|filoops\.info|vzturl\.com|qr\.net|1url\.com|tweez\.me|v\.gd|tr\.im|link\.zip\.net', self.url)
+        match = re.search(
+            r'bit\.ly|goo\.gl|shorte\.st|go2l\.ink|x\.co|ow\.ly|t\.co|tinyurl|tr\.im|is\.gd|cli\.gs|'
+            r'yfrog\.com|migre\.me|ff\.im|tiny\.cc|url4\.eu|twit\.ac|su\.pr|twurl\.nl|snipurl\.com|'
+            r'short\.to|BudURL\.com|ping\.fm|post\.ly|Just\.as|bkite\.com|snipr\.com|fic\.kr|loopt\.us|'
+            r'doiop\.com|short\.ie|kl\.am|wp\.me|rubyurl\.com|om\.ly|to\.ly|bit\.do|t\.co|lnkd\.in|'
+            r'db\.tt|qr\.ae|adf\.ly|goo\.gl|bitly\.com|cur\.lv|tinyurl\.com|ow\.ly|bit\.ly|ity\.im|'
+            r'q\.gs|is\.gd|po\.st|bc\.vc|twitthis\.com|u\.to|j\.mp|buzurl\.com|cutt\.us|u\.bb|yourls\.org|'
+            r'x\.co|prettylinkpro\.com|scrnch\.me|filoops\.info|vzturl\.com|qr\.net|1url\.com|tweez\.me|v\.gd|'
+            r'tr\.im|link\.zip\.net',
+            self.url)
         if match:
             return -1
         return 1
 
     # 4.Symbol@
     def symbol(self):
-        if re.findall("@", self.url):
+        if "@" in self.url:
             return -1
         return 1
 
@@ -116,8 +119,7 @@ class FeatureExtraction:
     # 6.prefixSuffix
     def prefixSuffix(self):
         try:
-            match = re.findall(r'\-', self.domain)
-            if match:
+            if '-' in self.domain:
                 return -1
             return 1
         except:
@@ -135,33 +137,27 @@ class FeatureExtraction:
     # 8.HTTPS
     def Https(self):
         try:
-            https = self.urlparse.scheme
-            if 'https' in https:
+            if self.urlparse.scheme == 'https':
                 return 1
-            return -1
+            return -1  # No HTTPS = unsafe
         except:
-            return 1
+            return -1
 
     # 9.DomainRegLen
     def DomainRegLen(self):
         try:
             expiration_date = self.whois_response.expiration_date
             creation_date = self.whois_response.creation_date
-            try:
-                if len(expiration_date):
-                    expiration_date = expiration_date[0]
-            except:
-                pass
-            try:
-                if len(creation_date):
-                    creation_date = creation_date[0]
-            except:
-                pass
+            if not expiration_date or not creation_date:
+                return -1  # WHOIS data missing
 
-            age = (expiration_date.year - creation_date.year) * 12 + (expiration_date.month - creation_date.month)
-            if age >= 12:
-                return 1
-            return -1
+            if isinstance(expiration_date, list):
+                expiration_date = expiration_date[0]
+            if isinstance(creation_date, list):
+                creation_date = creation_date[0]
+
+            age_months = (expiration_date.year - creation_date.year) * 12 + (expiration_date.month - creation_date.month)
+            return 1 if age_months >= 12 else -1
         except:
             return -1
 
@@ -169,9 +165,8 @@ class FeatureExtraction:
     def Favicon(self):
         try:
             for head in self.soup.find_all('head'):
-                for head.link in self.soup.find_all('link', href=True):
-                    dots = [x.start(0) for x in re.finditer(r'\.', head.link['href'])]
-                    if self.url in head.link['href'] or len(dots) == 1 or self.domain in head.link['href']:
+                for link in head.find_all('link', href=True):
+                    if self.url in link['href'] or self.domain in link['href']:
                         return 1
             return -1
         except:
@@ -180,8 +175,7 @@ class FeatureExtraction:
     # 11. NonStdPort
     def NonStdPort(self):
         try:
-            port = self.domain.split(":")
-            if len(port) > 1:
+            if ":" in self.domain:
                 return -1
             return 1
         except:
@@ -189,190 +183,121 @@ class FeatureExtraction:
 
     # 12. HTTPSDomainURL
     def HTTPSDomainURL(self):
-        try:
-            if 'https' in self.domain:
-                return -1
-            return 1
-        except:
+        if 'https' in self.domain:
             return -1
+        return 1
 
     # 13. RequestURL
     def RequestURL(self):
         try:
-            i, success = 0, 0
-            for img in self.soup.find_all('img', src=True):
-                dots = [x.start(0) for x in re.finditer(r'\.', img['src'])]
-                if self.url in img['src'] or self.domain in img['src'] or len(dots) == 1:
-                    success += 1
-                i += 1
-
-            for audio in self.soup.find_all('audio', src=True):
-                dots = [x.start(0) for x in re.finditer(r'\.', audio['src'])]
-                if self.url in audio['src'] or self.domain in audio['src'] or len(dots) == 1:
-                    success += 1
-                i += 1
-
-            for embed in self.soup.find_all('embed', src=True):
-                dots = [x.start(0) for x in re.finditer(r'\.', embed['src'])]
-                if self.url in embed['src'] or self.domain in embed['src'] or len(dots) == 1:
-                    success += 1
-                i += 1
-
-            for iframe in self.soup.find_all('iframe', src=True):
-                dots = [x.start(0) for x in re.finditer(r'\.', iframe['src'])]
-                if self.url in iframe['src'] or self.domain in iframe['src'] or len(dots) == 1:
-                    success += 1
-                i += 1
-
-            try:
-                percentage = success / float(i) * 100
-                if percentage < 22.0:
-                    return 1
-                elif 22.0 <= percentage < 61.0:
-                    return 0
-                else:
-                    return -1
-            except:
-                return 0
+            total = unsafe = 0
+            for tag in ['img', 'audio', 'embed', 'iframe']:
+                for element in self.soup.find_all(tag, src=True):
+                    total += 1
+                    if not (self.url in element['src'] or self.domain in element['src']):
+                        unsafe += 1
+            if total == 0:
+                return 1
+            percentage = (unsafe / total) * 100
+            return 1 if percentage < 22 else 0 if 22 <= percentage < 61 else -1
         except:
             return -1
 
     # 14. AnchorURL
     def AnchorURL(self):
         try:
-            i, unsafe = 0, 0
+            total = unsafe = 0
             for a in self.soup.find_all('a', href=True):
-                if "#" in a['href'] or "javascript" in a['href'].lower() or "mailto" in a['href'].lower() or not (self.url in a['href'] or self.domain in a['href']):
+                total += 1
+                if "#" in a['href'] or "javascript" in a['href'].lower() or "mailto" in a['href'].lower():
                     unsafe += 1
-                i += 1
-
-            try:
-                percentage = unsafe / float(i) * 100
-                if percentage < 31.0:
-                    return 1
-                elif 31.0 <= percentage < 67.0:
-                    return 0
-                else:
-                    return -1
-            except:
-                return -1
+            if total == 0:
+                return 1
+            percentage = (unsafe / total) * 100
+            return 1 if percentage < 31 else 0 if 31 <= percentage < 67 else -1
         except:
             return -1
 
     # 15. LinksInScriptTags
     def LinksInScriptTags(self):
         try:
-            i, success = 0, 0
-            for link in self.soup.find_all('link', href=True):
-                dots = [x.start(0) for x in re.finditer(r'\.', link['href'])]
-                if self.url in link['href'] or self.domain in link['href'] or len(dots) == 1:
-                    success += 1
-                i += 1
-
-            for script in self.soup.find_all('script', src=True):
-                dots = [x.start(0) for x in re.finditer(r'\.', script['src'])]
-                if self.url in script['src'] or self.domain in script['src'] or len(dots) == 1:
-                    success += 1
-                i += 1
-
-            try:
-                percentage = success / float(i) * 100
-                if percentage < 17.0:
-                    return 1
-                elif 17.0 <= percentage < 81.0:
-                    return 0
-                else:
-                    return -1
-            except:
-                return 0
+            total = unsafe = 0
+            for tag in ['link', 'script']:
+                for element in self.soup.find_all(tag, src=True):
+                    total += 1
+                    if not (self.url in element['src'] or self.domain in element['src']):
+                        unsafe += 1
+            if total == 0:
+                return 1
+            percentage = (unsafe / total) * 100
+            return 1 if percentage < 17 else 0 if 17 <= percentage < 81 else -1
         except:
             return -1
 
     # 16. ServerFormHandler
     def ServerFormHandler(self):
         try:
-            if len(self.soup.find_all('form', action=True)) == 0:
+            forms = self.soup.find_all('form', action=True)
+            if not forms:
                 return 1
-            else:
-                for form in self.soup.find_all('form', action=True):
-                    if form['action'] == "" or form['action'] == "about:blank":
-                        return -1
-                    elif self.url not in form['action'] and self.domain not in form['action']:
-                        return 0
-                    else:
-                        return 1
+            for form in forms:
+                if not form['action'] or form['action'] == "about:blank":
+                    return -1
+                elif self.url not in form['action'] and self.domain not in form['action']:
+                    return 0
+            return 1
         except:
             return -1
 
     # 17. InfoEmail
     def InfoEmail(self):
         try:
-            if re.findall(r"[mail\(\)|mailto:?]", self.soup):
+            if re.search(r"mail\(\)|mailto:", self.response.text):
                 return -1
-            else:
-                return 1
+            return 1
         except:
             return -1
 
     # 18. AbnormalURL
     def AbnormalURL(self):
         try:
-            if self.response.text == self.whois_response:
-                return 1
-            else:
-                return -1
+            return 1 if self.response.text == str(self.whois_response) else -1
         except:
             return -1
 
     # 19. WebsiteForwarding
     def WebsiteForwarding(self):
         try:
-            if len(self.response.history) <= 1:
-                return 1
-            elif len(self.response.history) <= 4:
-                return 0
-            else:
-                return -1
+            redirects = len(self.response.history)
+            return 1 if redirects <= 1 else 0 if redirects <= 4 else -1
         except:
             return -1
 
     # 20. StatusBarCust
     def StatusBarCust(self):
         try:
-            if re.findall("<script>.+onmouseover.+</script>", self.response.text):
-                return 1
-            else:
-                return -1
+            return -1 if re.search(r"onmouseover", self.response.text) else 1
         except:
             return -1
 
     # 21. DisableRightClick
     def DisableRightClick(self):
         try:
-            if re.findall(r"event.button ?== ?2", self.response.text):
-                return 1
-            else:
-                return -1
+            return -1 if re.search(r"event.button ?== ?2", self.response.text) else 1
         except:
             return -1
 
     # 22. UsingPopupWindow
     def UsingPopupWindow(self):
         try:
-            if re.findall(r"alert\(", self.response.text):
-                return 1
-            else:
-                return -1
+            return -1 if re.search(r"alert\(", self.response.text) else 1
         except:
             return -1
 
     # 23. IframeRedirection
     def IframeRedirection(self):
         try:
-            if re.findall(r"[<iframe>|<frameBorder>]", self.response.text):
-                return 1
-            else:
-                return -1
+            return -1 if re.search(r"<iframe|<frameBorder", self.response.text) else 1
         except:
             return -1
 
@@ -380,45 +305,25 @@ class FeatureExtraction:
     def AgeofDomain(self):
         try:
             creation_date = self.whois_response.creation_date
-            try:
-                if len(creation_date):
-                    creation_date = creation_date[0]
-            except:
-                pass
-
-            today = date.today()
-            age = (today.year - creation_date.year) * 12 + (today.month - creation_date.month)
-            if age >= 6:
-                return 1
-            return -1
+            if not creation_date:
+                return -1
+            if isinstance(creation_date, list):
+                creation_date = creation_date[0]
+            age = (datetime.now().year - creation_date.year) * 12 + (datetime.now().month - creation_date.month)
+            return 1 if age >= 6 else -1
         except:
             return -1
 
-    # 25. DNSRecording
+    # 25. DNSRecording (same as AgeofDomain)
     def DNSRecording(self):
-        try:
-            creation_date = self.whois_response.creation_date
-            try:
-                if len(creation_date):
-                    creation_date = creation_date[0]
-            except:
-                pass
-
-            today = date.today()
-            age = (today.year - creation_date.year) * 12 + (today.month - creation_date.month)
-            if age >= 6:
-                return 1
-            return -1
-        except:
-            return -1
+        return self.AgeofDomain()
 
     # 26. WebsiteTraffic
     def WebsiteTraffic(self):
         try:
-            rank = BeautifulSoup(urllib.request.urlopen("http://data.alexa.com/data?cli=10&dat=s&url=" + self.url).read(), "xml").find("REACH")['RANK']
-            if int(rank) < 100000:
-                return 1
-            return 0
+            rank = BeautifulSoup(urllib.request.urlopen(
+                "http://data.alexa.com/data?cli=10&dat=s&url=" + self.url).read(), "xml").find("REACH")['RANK']
+            return 1 if int(rank) < 100000 else 0
         except:
             return -1
 
@@ -426,35 +331,23 @@ class FeatureExtraction:
     def PageRank(self):
         try:
             prank_checker_response = requests.post("https://www.checkpagerank.net/index.php", {"name": self.domain})
-
             global_rank = int(re.findall(r"Global Rank: ([0-9]+)", prank_checker_response.text)[0])
-            if global_rank > 0 and global_rank < 100000:
-                return 1
-            return -1
+            return 1 if 0 < global_rank < 100000 else -1
         except:
             return -1
 
     # 28. GoogleIndex
     def GoogleIndex(self):
         try:
-            site = search(self.url, 5)
-            if site:
-                return 1
-            else:
-                return -1
+            return 1 if list(search(self.url, num=1)) else -1
         except:
             return 1
 
     # 29. LinksPointingToPage
     def LinksPointingToPage(self):
         try:
-            number_of_links = len(re.findall(r"<a href=", self.response.text))
-            if number_of_links == 0:
-                return 1
-            elif number_of_links <= 2:
-                return 0
-            else:
-                return -1
+            num_links = len(re.findall(r"<a href=", self.response.text))
+            return 1 if num_links == 0 else 0 if num_links <= 2 else -1
         except:
             return -1
 
@@ -462,40 +355,29 @@ class FeatureExtraction:
     def StatsReport(self):
         try:
             url_match = re.search(
-                r'at\.ua|usa\.cc|baltazarpresentes\.com\.br|pe\.hu|esy\.es|hol\.es|sweddy\.com|myjino\.ru|96\.lt|ow\.ly', self.url)
-            try:
-                ip_address = socket.gethostbyname(self.domain)
-                ip_match = re.search(
-                    r'146\.112\.61\.108|213\.174\.157\.151|121\.50\.168\.88|192\.185\.217\.116|'
-                    r'78\.46\.211\.158|181\.174\.165\.13|46\.242\.145\.103|121\.50\.168\.40|'
-                    r'83\.125\.22\.219|46\.242\.145\.98|107\.151\.148\.44|107\.151\.148\.107|'
-                    r'64\.70\.19\.203|199\.184\.144\.27|107\.151\.148\.108|107\.151\.148\.109|'
-                    r'119\.28\.52\.61|54\.83\.43\.69|52\.69\.166\.231|216\.58\.192\.225|'
-                    r'118\.184\.25\.86|67\.208\.74\.71|23\.253\.126\.58|104\.239\.157\.210|'
-                    r'175\.126\.123\.219|141\.8\.224\.221|10\.10\.10\.10|43\.229\.108\.32|'
-                    r'103\.232\.215\.140|69\.172\.201\.153|216\.218\.185\.162|54\.225\.104\.146|'
-                    r'103\.243\.24\.98|199\.59\.243\.120|31\.170\.160\.61|213\.19\.128\.77|'
-                    r'62\.113\.226\.131|208\.100\.26\.234|195\.16\.127\.102|195\.16\.127\.157|'
-                    r'34\.196\.13\.28|103\.224\.212\.222|172\.217\.4\.225|54\.72\.9\.51|'
-                    r'192\.64\.147\.141|198\.200\.56\.183|23\.253\.164\.103|52\.48\.191\.26|'
-                    r'52\.214\.197\.72|87\.98\.255\.18|209\.99\.17\.27|216\.38\.62\.18|'
-                    r'104\.130\.124\.96|47\.89\.58\.141|78\.46\.211\.158|54\.86\.225\.156|'
-                    r'54\.82\.156\.19|37\.157\.192\.102|204\.11\.56\.48|110\.34\.231\.42', ip_address)
-            except socket.gaierror:
-                ip_match = None
-
+                r'at\.ua|usa\.cc|baltazarpresentes\.com\.br|pe\.hu|esy\.es|hol\.es|sweddy\.com|myjino\.ru|96\.lt|ow\.ly', 
+                self.url)
             if url_match:
                 return -1
-            elif ip_match:
-                return -1
-            return 1
-        except Exception as e:
-            print(f"Error in StatsReport: {e}")
+
+            ip_address = socket.gethostbyname(self.domain)
+            ip_match = re.search(
+                r'146\.112\.61\.108|213\.174\.157\.151|121\.50\.168\.88|192\.185\.217\.116|78\.46\.211\.158|'
+                r'181\.174\.165\.13|46\.242\.145\.103|121\.50\.168\.40|83\.125\.22\.219|46\.242\.145\.98|'
+                r'107\.151\.148\.44|107\.151\.148\.107|64\.70\.19\.203|199\.184\.144\.27|107\.151\.148\.108|'
+                r'107\.151\.148\.109|119\.28\.52\.61|54\.83\.43\.69|52\.69\.166\.231|216\.58\.192\.225|'
+                r'118\.184\.25\.86|67\.208\.74\.71|23\.253\.126\.58|104\.239\.157\.210|175\.126\.123\.219|'
+                r'141\.8\.224\.221|10\.10\.10\.10|43\.229\.108\.32|103\.232\.215\.140|69\.172\.201\.153|'
+                r'216\.218\.185\.162|54\.225\.104\.146|103\.243\.24\.98|199\.59\.243\.120|31\.170\.160\.61|'
+                r'213\.19\.128\.77|62\.113\.226\.131|208\.100\.26\.234|195\.16\.127\.102|195\.16\.127\.157|'
+                r'34\.196\.13\.28|103\.224\.212\.222|172\.217\.4\.225|54\.72\.9\.51|192\.64\.147\.141|'
+                r'198\.200\.56\.183|23\.253\.164\.103|52\.48\.191\.26|52\.214\.197\.72|87\.98\.255\.18|'
+                r'209\.99\.17\.27|216\.38\.62\.18|104\.130\.124\.96|47\.89\.58\.141|78\.46\.211\.158|'
+                r'54\.86\.225\.156|54\.82\.156\.19|37\.157\.192\.102|204\.11\.56\.48|110\.34\.231\.42',
+                ip_address)
+            return -1 if ip_match else 1
+        except:
             return 1
 
     def getFeaturesList(self):
         return self.features
-
-
-
-        
